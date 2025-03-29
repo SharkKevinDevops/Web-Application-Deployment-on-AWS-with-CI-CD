@@ -34,17 +34,38 @@ jobs:
           AWS_REGION: "ap-southeast-1" # Change to your desired region
           ASG_NAME: "staticwebsite-asg" # Change to your ASG name
         run: |
+          # Lấy danh sách Instance IDs từ ASG
           INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
             --auto-scaling-group-names $ASG_NAME \
             --region $AWS_REGION \
             --query "AutoScalingGroups[0].Instances[*].InstanceId" --output text)
 
+          # Kiểm tra nếu INSTANCE_IDS rỗng (ASG chưa tạo instance nào)
+          if [[ -z "$INSTANCE_IDS" ]]; then
+            echo "Không tìm thấy instance nào trong ASG $ASG_NAME"
+            exit 1
+          fi
+
+          echo "Instance IDs: $INSTANCE_IDS"
+
+          # Lấy danh sách Public IPs, đảm bảo nó là chuỗi có dấu phẩy (,) ngăn cách
           PUBLIC_IPS=$(aws ec2 describe-instances \
             --instance-ids $INSTANCE_IDS \
             --region $AWS_REGION \
-            --query "Reservations[*].Instances[*].PublicIpAddress" --output text)
+            --query "Reservations[*].Instances[*].PublicIpAddress" \
+            --output text | tr '\n' ',' | sed 's/,$//')
 
+          echo "Public IPs: $PUBLIC_IPS"
+
+          # Kiểm tra nếu không có Public IP nào
+          if [[ -z "$PUBLIC_IPS" ]]; then
+            echo "Không tìm thấy Public IP cho các instance"
+            exit 1
+          fi
+
+          # Lưu vào biến môi trường GitHub Actions
           echo "PUBLIC_IPS=${PUBLIC_IPS}" >> $GITHUB_ENV
+
 
       - name: Deploy via SSH
         env:
