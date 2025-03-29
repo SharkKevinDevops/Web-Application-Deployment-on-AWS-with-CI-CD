@@ -1,54 +1,51 @@
 name: Deploy to EC2 via SSH
 on:
   push:
-    branches: [main]
+    branches: [main]  # Trigger this workflow when changes are pushed to the "main" branch
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest  # The job runs on the latest Ubuntu environment
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v3  # Clone the repository to the runner
 
       - name: Install AWS CLI
         run: |
-          sudo apt-get update
-          sudo apt-get install -y curl unzip
-          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-          unzip awscliv2.zip
-          sudo ./aws/install --update
-          aws --version
-
-
+          sudo apt-get update  # Update package lists
+          sudo apt-get install -y curl unzip  # Install required dependencies
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"  # Download AWS CLI
+          unzip awscliv2.zip  # Unzip AWS CLI package
+          sudo ./aws/install --update  # Install AWS CLI
+          aws --version  # Verify the installation
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
+        uses: aws-actions/configure-aws-credentials@v2  # Use GitHub Action to configure AWS credentials
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: "ap-southeast-1" # Change to your desired region
-
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}  # AWS Access Key ID (stored as GitHub Secret)
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}  # AWS Secret Access Key (stored as GitHub Secret)
+          aws-region: "ap-southeast-1"  # Set the AWS region (Change to your target region)
 
       - name: Get EC2 Instance Public IPs from ASG
         env:
-          AWS_REGION: "ap-southeast-1" # Change to your desired region
-          ASG_NAME: "staticwebsite-asg" # Change to your ASG name
+          AWS_REGION: "ap-southeast-1"  # Set AWS region
+          ASG_NAME: "staticwebsite-asg"  # Auto Scaling Group name (Change accordingly)
         run: |
-          # Lấy danh sách Instance IDs từ ASG
+          # Retrieve a list of EC2 Instance IDs associated with the Auto Scaling Group (ASG)
           INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
             --auto-scaling-group-names $ASG_NAME \
             --region $AWS_REGION \
             --query "AutoScalingGroups[0].Instances[*].InstanceId" --output text)
 
-          # Kiểm tra nếu INSTANCE_IDS rỗng (ASG chưa tạo instance nào)
+          # Check if INSTANCE_IDS is empty (ASG has no running instances)
           if [[ -z "$INSTANCE_IDS" ]]; then
-            echo "Không tìm thấy instance nào trong ASG $ASG_NAME"
-            exit 1
+            echo "No instances found in ASG $ASG_NAME"
+            exit 1  # Exit with an error if no instances are found
           fi
 
           echo "Instance IDs: $INSTANCE_IDS"
 
-          # Lấy danh sách Public IPs, đảm bảo nó là chuỗi có dấu phẩy (,) ngăn cách
+          # Retrieve public IPs of the instances and format them as a comma-separated list
           PUBLIC_IPS=$(aws ec2 describe-instances \
             --instance-ids $INSTANCE_IDS \
             --region $AWS_REGION \
@@ -57,33 +54,32 @@ jobs:
 
           echo "Public IPs: $PUBLIC_IPS"
 
-          # Kiểm tra nếu không có Public IP nào
+          # Check if no public IPs are found
           if [[ -z "$PUBLIC_IPS" ]]; then
-            echo "Không tìm thấy Public IP cho các instance"
-            exit 1
+            echo "No public IPs found for instances"
+            exit 1  # Exit with an error if no public IPs are found
           fi
 
-          # Lưu vào biến môi trường GitHub Actions
+          # Store the public IPs as an environment variable for GitHub Actions
           echo "PUBLIC_IPS=${PUBLIC_IPS}" >> $GITHUB_ENV
-
 
       - name: Deploy via SSH
         env:
-          EC2_KEY: ${{ secrets.EC2_SSH_KEY }}
-          USER: "ec2-user"
+          EC2_KEY: ${{ secrets.EC2_SSH_KEY }}  # SSH private key (stored in GitHub Secrets)
+          USER: "ec2-user"  # The default user for Amazon Linux instances
         run: |
-          echo "$EC2_KEY" > key.pem
-          chmod 400 key.pem
+          echo "$EC2_KEY" > key.pem  # Save the SSH private key to a file
+          chmod 400 key.pem  # Secure the key file by setting correct permissions
 
           for ip in $PUBLIC_IPS; do
             echo "Deploying to $ip..."
 
-            DATE=$(date)
-            sed -i "s/\$(date)/$DATE/" index.html
-                
-            # Sao chép file vào thư mục /tmp/ trước
+            DATE=$(date)  # Get the current date
+            sed -i "s/\$(date)/$DATE/" index.html  # Replace "$(date)" placeholder with actual date
+            
+            # Copy the file to the /tmp/ directory on the EC2 instance
             scp -i key.pem -o StrictHostKeyChecking=no ./index.html $USER@$ip:/tmp/
 
-            # SSH vào EC2 để di chuyển file vào thư mục /usr/share/nginx/html/
+            # Move the file from /tmp/ to the Nginx web directory
             ssh -i key.pem -o StrictHostKeyChecking=no $USER@$ip "sudo mv /tmp/index.html /usr/share/nginx/html/"
           done
