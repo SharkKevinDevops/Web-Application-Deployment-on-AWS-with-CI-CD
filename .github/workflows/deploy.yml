@@ -77,6 +77,9 @@ jobs:
 
           for ip in $PUBLIC_IPS; do
             echo "Deploying to $ip..."
+
+            DATE=$(date)
+            sed -i "s/\$(date)/$DATE/" index.html
                 
             # Sao chép file vào thư mục /tmp/ trước
             scp -i key.pem -o StrictHostKeyChecking=no ./index.html $USER@$ip:/tmp/
