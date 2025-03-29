@@ -56,6 +56,10 @@ jobs:
 
           for ip in $PUBLIC_IPS; do
             echo "Deploying to $ip..."
-            ssh -o StrictHostKeyChecking=no -i key.pem $USER@$ip "sudo rm -rf /usr/share/nginx/html/*"
-            scp -i key.pem -r ./index.html $USER@$ip:/usr/share/nginx/html/
+                
+            # Sao chép file vào thư mục /tmp/ trước
+            scp -i key.pem -o StrictHostKeyChecking=no ./index.html $USER@$ip:/tmp/
+
+            # SSH vào EC2 để di chuyển file vào thư mục /usr/share/nginx/html/
+            ssh -i key.pem -o StrictHostKeyChecking=no $USER@$ip "sudo mv /tmp/index.html /usr/share/nginx/html/"
           done
