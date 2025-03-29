@@ -1,6 +1,10 @@
 <!DOCTYPE html>
 <html>
-<body>
-    <h1>Hello from CI/CD - Updated at $(date)</h1>
-</body>
+    <body>
+        <h1>Hello from CI/CD - Updated at <span id="date"></span></h1>
+
+        <script>
+        document.getElementById("date").innerText = new Date().toLocaleString();
+    </script>
+    </body>
 </html>
